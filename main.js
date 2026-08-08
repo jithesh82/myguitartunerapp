@@ -1,3 +1,5 @@
+import { KeepAwake } from '@capacitor-community/keep-awake';
+
 const A4 = 440;
 const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -17,9 +19,34 @@ const needle = document.getElementById('needle');
 
 startBtn.addEventListener('click', toggleTuning);
 
+// Release keep-awake if the page is hidden while tuning (app backgrounded / tab switch).
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && isTuning) {
+    allowScreenSleep();
+  } else if (!document.hidden && isTuning) {
+    keepScreenAwake();
+  }
+});
+
+async function keepScreenAwake() {
+  try {
+    await KeepAwake.keepAwake();
+  } catch (err) {
+    console.warn('KeepAwake.keepAwake failed:', err);
+  }
+}
+
+async function allowScreenSleep() {
+  try {
+    await KeepAwake.allowSleep();
+  } catch (err) {
+    console.warn('KeepAwake.allowSleep failed:', err);
+  }
+}
+
 async function toggleTuning() {
   if (isTuning) {
-    stopTuning();
+    await stopTuning();
   } else {
     await startTuning();
   }
@@ -39,6 +66,8 @@ async function startTuning() {
     isTuning = true;
     startBtn.textContent = "Stop Tuning";
     startBtn.classList.add('active');
+
+    await keepScreenAwake();
     
     updatePitch();
   } catch (err) {
@@ -47,10 +76,12 @@ async function startTuning() {
   }
 }
 
-function stopTuning() {
+async function stopTuning() {
   isTuning = false;
   startBtn.textContent = "Start Tuning";
   startBtn.classList.remove('active');
+
+  await allowScreenSleep();
   
   if (mediaStreamSource) {
     mediaStreamSource.mediaStream.getTracks().forEach(track => track.stop());
