@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Guitar Tuner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div class="header">
+        <h1>Guitar Tuner</h1>
+        <div class="subtitle">Standard Tuning</div>
+      </div>
+
+      <div class="tuner-display">
+        <div class="note-display" id="note-display">--</div>
+        <div class="cents-display" id="cents-display">0 cents</div>
+        
+        <div class="dial">
+          <div class="dial-background"></div>
+          <div class="needle" id="needle"></div>
+          <div class="tick marks-left"></div>
+          <div class="tick marks-right"></div>
+          <div class="tick mark-center"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="start-btn" class="btn primary-btn">Start Tuning</button>
+      </div>
+
+      <div class="frequency-info">
+        <span id="frequency-display">0.0 Hz</span>
+      </div>
+    </div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

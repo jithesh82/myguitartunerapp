@@ -1,0 +1,214 @@
+:root {
+  --bg-color: #0f172a;
+  --panel-bg: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent: #3b82f6;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  margin: 0;
+  overflow: hidden;
+}
+
+#app {
+  width: 100%;
+  max-width: 400px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.header {
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 300;
+}
+
+.tuner-display {
+  background: var(--panel-bg);
+  width: 100%;
+  border-radius: 2rem;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 2px 2px rgba(255, 255, 255, 0.05);
+  position: relative;
+}
+
+.note-display {
+  font-size: 6rem;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  transition: color 0.2s ease;
+}
+
+.note-display.perfect {
+  color: var(--success);
+  text-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+.note-display.flat {
+  color: var(--warning);
+}
+
+.note-display.sharp {
+  color: var(--danger);
+}
+
+.cents-display {
+  font-size: 1.25rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dial {
+  width: 100%;
+  height: 100px;
+  position: relative;
+  overflow: hidden;
+}
+
+.dial-background {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  border: 4px solid var(--text-muted);
+  border-bottom: none;
+  transform: translate(-50%, -50%);
+  opacity: 0.2;
+}
+
+.needle {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  width: 4px;
+  height: 110px;
+  background: var(--accent);
+  transform-origin: bottom center;
+  transform: translateX(-50%) rotate(0deg);
+  border-radius: 4px;
+  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+  z-index: 10;
+}
+
+.needle::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  background: var(--text-main);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.needle.perfect {
+  background: var(--success);
+}
+.needle.flat {
+  background: var(--warning);
+}
+.needle.sharp {
+  background: var(--danger);
+}
+
+.tick {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  height: 15px;
+  background: var(--text-muted);
+  transform-origin: bottom center;
+}
+
+.mark-center {
+  left: 50%;
+  transform: translateX(-50%);
+  height: 25px;
+  background: var(--success);
+  width: 3px;
+}
+
+.controls {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.btn {
+  background: var(--panel-bg);
+  color: var(--text-main);
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 1rem;
+  font-family: inherit;
+  font-size: 1.125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+}
+.primary-btn.active {
+  background: linear-gradient(135deg, var(--danger), #b91c1c);
+}
+
+.frequency-info {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
