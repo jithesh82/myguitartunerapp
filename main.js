@@ -201,7 +201,7 @@ function renderPitch(pitch) {
 /**
  * Temporal filter between raw detector output and the UI.
  * - Band limit
- * - Octave jump correction vs recent pitch
+ * - Octave / harmonic correction (classic ACF often locks onto 2× fundamental)
  * - Median of recent samples (spike kill)
  * - Exponential smooth
  * - Hold last good briefly when detector drops out
@@ -212,6 +212,8 @@ function createPitchStabilizer(options = {}) {
   const holdMs = options.holdMs ?? 250;
   const minHz = options.minHz ?? MIN_FREQ_HZ;
   const maxHz = options.maxHz ?? MAX_FREQ_HZ;
+  // Open low strings — ACF often reports 2× these as E3/A3/D4.
+  const lowOpenFundamentals = options.lowOpenFundamentals ?? [82.40689, 110.0, 146.8324];
 
   let history = [];
   let smoothed = null;
@@ -229,23 +231,67 @@ function createPitchStabilizer(options = {}) {
     return hz >= minHz && hz <= maxHz && Number.isFinite(hz);
   }
 
-  /** Prefer octave that matches recent stable pitch (fixes low-E harmonic jumps). */
-  function correctOctave(hz) {
-    if (lastGood == null) return hz;
-    let best = hz;
-    let bestRatio = Math.abs(Math.log2(hz / lastGood));
-    for (const factor of [0.5, 2]) {
-      const candidate = hz * factor;
-      if (!inBand(candidate)) continue;
-      const ratio = Math.abs(Math.log2(candidate / lastGood));
-      if (ratio < bestRatio) {
-        bestRatio = ratio;
-        best = candidate;
+  function centsBetween(a, b) {
+    return 1200 * Math.abs(Math.log2(a / b));
+  }
+
+  /**
+   * Classic ACF often returns the first harmonic (2×f0), e.g. E3 (~165) for open low E (~82).
+   * Fold down when the reading looks like 2× a low open string.
+   */
+  function foldLowStringHarmonic(hz) {
+    for (const fund of lowOpenFundamentals) {
+      if (centsBetween(hz, fund * 2) < 50 && inBand(fund)) {
+        // Map onto the measured ratio so flat/sharp is preserved: hz/2 ≈ fund * (hz/(2*fund))
+        return hz / 2;
       }
     }
-    // Only snap if we're clearly near half/double (within ~1.5 semitones of last good after correction)
-    if (best !== hz && bestRatio < 0.15) return best;
+    // Also fold 4× (rare but noisy ACF)
+    for (const fund of lowOpenFundamentals) {
+      if (centsBetween(hz, fund * 4) < 50 && inBand(hz / 4)) {
+        return hz / 4;
+      }
+    }
     return hz;
+  }
+
+  /**
+   * Keep continuity with lastGood, but never force a true low reading up an octave.
+   * Prefer dropping to half when the new sample is the fundamental under a stuck harmonic.
+   */
+  function correctOctave(hz) {
+    hz = foldLowStringHarmonic(hz);
+
+    if (lastGood == null) return hz;
+
+    // New sample is ~half of what we were showing → trust the lower fundamental.
+    if (centsBetween(hz, lastGood / 2) < 45 && inBand(hz)) {
+      return hz;
+    }
+
+    // New sample is ~double of last good → reject octave-up spike, keep track.
+    if (centsBetween(hz, lastGood * 2) < 45) {
+      return lastGood;
+    }
+
+    // Same register: pick among f, f/2, 2f the closest to lastGood (with mild lower bias).
+    const candidates = [hz];
+    if (inBand(hz * 0.5)) candidates.push(hz * 0.5);
+    if (inBand(hz * 2)) candidates.push(hz * 2);
+
+    let best = hz;
+    let bestScore = Infinity;
+    for (const c of candidates) {
+      const absOct = Math.abs(Math.log2(c / lastGood));
+      if (absOct > 1.05) continue;
+      // Mild penalty for higher candidates so we don't climb to E3 and stick.
+      const score = absOct + (c > lastGood ? 0.05 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return best;
   }
 
   function median(values) {
@@ -262,10 +308,8 @@ function createPitchStabilizer(options = {}) {
    * @returns {number|null} smoothed Hz to display, or null if nothing to show
    */
   function update(rawHz, nowMs) {
-    let accepted = null;
-
     if (rawHz != null && inBand(rawHz)) {
-      accepted = correctOctave(rawHz);
+      const accepted = correctOctave(rawHz);
       history.push(accepted);
       if (history.length > medianWindow) history.shift();
 
@@ -273,9 +317,14 @@ function createPitchStabilizer(options = {}) {
       if (smoothed == null) {
         smoothed = med;
       } else {
-        // Slightly snappier when close (small alpha change); always blend toward median
         const centsDelta = 1200 * Math.abs(Math.log2(med / smoothed));
-        const alpha = centsDelta > 40 ? Math.min(0.55, smoothAlpha * 1.8) : smoothAlpha;
+        // Snap faster when correcting a clear octave fold (e.g. E3 → E2).
+        const octaveJump = centsDelta > 1000;
+        const alpha = octaveJump
+          ? 0.65
+          : centsDelta > 40
+            ? Math.min(0.55, smoothAlpha * 1.8)
+            : smoothAlpha;
         smoothed = smoothed + alpha * (med - smoothed);
       }
 

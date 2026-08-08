@@ -11,7 +11,7 @@ Full plan: [`docs/IMPROVEMENT_PLAN.md`](./IMPROVEMENT_PLAN.md)
 |-------|-------------|--------|--------------------|
 | 1 | Keep screen awake while tuning | **Done** | Yes — does not dim while tuning |
 | 2 | Audio capture hardening (mic DSP off) | **Done** | Yes — mic works with raw constraints |
-| 3 | Shared pitch stability layer | **Done** (code) | Awaiting your test |
+| 3 | Shared pitch stability layer | **Done** | Yes — low E much smoother; residual E2→E3 octave slips |
 | 4 | YIN detector + Classic toggle | Pending | — |
 | 5 | Polish, build, verify, commit | Pending | — |
 
@@ -135,7 +135,25 @@ Note: residual flicker may remain until **Phase 4 (YIN)**; this phase only post-
 
 ### Device result
 
-- Pending user confirmation.
+- **Pass (mostly):** Low E flicker much improved.
+- **Follow-up:** Sometimes settled on **E3** instead of **E2** (octave/harmonic lock from classic ACF). Octave fold refined (see Phase 3.1).
+
+---
+
+## Phase 3.1 — Octave fold tweak ✅ (code)
+
+**Goal:** Stop low open strings locking one octave high (E2→E3, etc.).
+
+| Change | Detail |
+|--------|--------|
+| Fold 2× / 4× low opens | If reading ≈ 2× or 4× of E2/A2/D3 open, map down to fundamental |
+| Trust drop | If new sample ≈ lastGood/2, accept lower (escape stuck E3) |
+| Reject climb | If new sample ≈ lastGood×2, keep lastGood |
+| Mild lower bias | When choosing among octaves, prefer not climbing |
+
+### Device result
+
+- Pending re-test after rebuild.
 
 ---
 
@@ -168,3 +186,4 @@ Buffer 4096, needle polish, full string matrix test, commit when ready.
 | 2026-08-08 | Phase 1 device-verified (no dim while tuning); this tracker created |
 | 2026-08-08 | Phase 2 implemented (raw mic constraints + fallback + logs); build/sync done |
 | 2026-08-08 | Phase 2 device-verified; Phase 3 implemented; push Phases 2–3 + docs |
+| 2026-08-08 | Phase 3 verified (low E smoother); E2→E3 residual; Phase 3.1 octave fold |
