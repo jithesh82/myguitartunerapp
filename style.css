@@ -212,3 +212,49 @@ body {
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
 }
+
+.detector-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.detector-caption {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detector-toggle {
+  display: flex;
+  background: var(--panel-bg);
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.detector-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 0.55rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.detector-btn.active {
+  background: linear-gradient(135deg, var(--accent), #2563eb);
+  color: var(--text-main);
+}
+
+.detector-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}

@@ -11,8 +11,9 @@ Full plan: [`docs/IMPROVEMENT_PLAN.md`](./IMPROVEMENT_PLAN.md)
 |-------|-------------|--------|--------------------|
 | 1 | Keep screen awake while tuning | **Done** | Yes — does not dim while tuning |
 | 2 | Audio capture hardening (mic DSP off) | **Done** | Yes — mic works with raw constraints |
-| 3 | Shared pitch stability layer | **Done** | Yes — low E much smoother; residual E2→E3 octave slips |
-| 4 | YIN detector + Classic toggle | Pending | — |
+| 3 | Shared pitch stability layer | **Done** | Yes — low E much smoother |
+| 3.1 | Hard E3→E2 octave fold | **Reverted** | Unsafe while tightening (could hide overshoot) |
+| 4 | YIN detector + Classic toggle | **Done** (code) | Awaiting your test |
 | 5 | Polish, build, verify, commit | Pending | — |
 
 ---
@@ -140,32 +141,43 @@ Note: residual flicker may remain until **Phase 4 (YIN)**; this phase only post-
 
 ---
 
-## Phase 3.1 — Octave fold tweak ✅ (code)
+## Phase 3.1 — Octave fold — REVERTED ⚠️
 
-**Goal:** Stop low open strings locking one octave high (E2→E3, etc.).
+**Why removed:** Hard E3→E2 fold and “reject octave climb” can **lie about rising pitch** while you tighten (e.g. true ~165 Hz shown as E2 “in tune”). That is unsafe if you keep turning the peg.
 
-| Change | Detail |
-|--------|--------|
-| Fold 2× / 4× low opens | If reading ≈ 2× or 4× of E2/A2/D3 open, map down to fundamental |
-| Trust drop | If new sample ≈ lastGood/2, accept lower (escape stuck E3) |
-| Reject climb | If new sample ≈ lastGood×2, keep lastGood |
-| Mild lower bias | When choosing among octaves, prefer not climbing |
-
-### Device result
-
-- Pending re-test after rebuild.
+Stabilizer is back to **soft continuity only** + median/smooth/hold — progressive Hz climbs are preserved.
 
 ---
 
-## Phase 4 — YIN + Classic toggle (upcoming)
+## Phase 4 — YIN + Classic toggle ✅ (code)
 
-New YIN detector as default; keep classic ACF; UI toggle + `localStorage`.
+**Goal:** Real fundamental detection (YIN) instead of heuristic octave folding; A/B with classic.
+
+| Item | Detail |
+|------|--------|
+| Enhanced (default) | YIN (de Cheveigné & Kawahara) |
+| Classic | Band-limited autocorrelation |
+| UI toggle | Enhanced \| Classic — remembered in `localStorage` |
+| Buffer | 4096 samples (better low E) |
+| Stabilizer | Soft only (safe while tuning up) |
+
+### How to test
+
+1. Rebuild/run — default **Enhanced**.
+2. Low E: should prefer **E2** without folding tricks.
+3. **Tighten slowly** from flat: Hz should **rise steadily** (no jump back to lower octave).
+4. Toggle **Classic** and compare flicker / octave.
+5. All six open strings.
+
+### Device result
+
+- Pending user confirmation.
 
 ---
 
 ## Phase 5 — Polish & ship (upcoming)
 
-Buffer 4096, needle polish, full string matrix test, commit when ready.
+Final polish after Phase 4 verification; commit already includes this work — residual polish if needed.
 
 ---
 
@@ -187,3 +199,4 @@ Buffer 4096, needle polish, full string matrix test, commit when ready.
 | 2026-08-08 | Phase 2 implemented (raw mic constraints + fallback + logs); build/sync done |
 | 2026-08-08 | Phase 2 device-verified; Phase 3 implemented; push Phases 2–3 + docs |
 | 2026-08-08 | Phase 3 verified (low E smoother); E2→E3 residual; Phase 3.1 octave fold |
+| 2026-08-08 | Reverted 3.1 (safety); Phase 4 YIN + Classic toggle + buffer 4096 |

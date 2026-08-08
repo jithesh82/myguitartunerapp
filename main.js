@@ -7,15 +7,21 @@ const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "
 const MIN_FREQ_HZ = 70;
 const MAX_FREQ_HZ = 1200;
 
+// Larger window helps low E (~82 Hz needs several periods).
+const buflen = 4096;
+const buf = new Float32Array(buflen);
+
+const DETECTOR_STORAGE_KEY = 'guitar-tuner-detector';
+/** @type {'yin' | 'classic'} */
+let detectorMode = loadDetectorMode();
+
 let audioContext = null;
 let analyser = null;
 let mediaStreamSource = null;
 let isTuning = false;
 let animationId = null;
-const buflen = 2048;
-const buf = new Float32Array(buflen);
 
-/** Shared stability pipeline (works with classic ACF now; YIN later). */
+/** Shared stability pipeline (no hard E3→E2 fold — safe while tightening). */
 const pitchStabilizer = createPitchStabilizer();
 
 const startBtn = document.getElementById('start-btn');
@@ -23,8 +29,12 @@ const noteDisplay = document.getElementById('note-display');
 const centsDisplay = document.getElementById('cents-display');
 const frequencyDisplay = document.getElementById('frequency-display');
 const needle = document.getElementById('needle');
+const detectorYinBtn = document.getElementById('detector-yin');
+const detectorClassicBtn = document.getElementById('detector-classic');
+const detectorLabel = document.getElementById('detector-label');
 
 startBtn.addEventListener('click', toggleTuning);
+setupDetectorToggle();
 
 // Release keep-awake if the page is hidden while tuning (app backgrounded / tab switch).
 document.addEventListener('visibilitychange', () => {
@@ -106,7 +116,8 @@ async function startTuning() {
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser.fftSize = buflen;
+    analyser.smoothingTimeConstant = 0;
 
     console.log('AudioContext sampleRate:', audioContext.sampleRate);
 
@@ -116,6 +127,7 @@ async function startTuning() {
     isTuning = true;
     startBtn.textContent = "Stop Tuning";
     startBtn.classList.add('active');
+    pitchStabilizer.reset();
 
     await keepScreenAwake();
 
@@ -161,14 +173,57 @@ function updatePitch() {
   if (!isTuning) return;
 
   analyser.getFloatTimeDomainData(buf);
-  const raw = autoCorrelate(buf, audioContext.sampleRate);
-  const stable = pitchStabilizer.update(raw === -1 ? null : raw, performance.now());
+  const raw = detectPitch(buf, audioContext.sampleRate);
+  const stable = pitchStabilizer.update(raw, performance.now());
 
   if (stable != null) {
     renderPitch(stable);
   }
 
   animationId = requestAnimationFrame(updatePitch);
+}
+
+function loadDetectorMode() {
+  try {
+    const saved = localStorage.getItem(DETECTOR_STORAGE_KEY);
+    if (saved === 'classic' || saved === 'yin') return saved;
+  } catch (_) { /* ignore */ }
+  return 'yin';
+}
+
+function setupDetectorToggle() {
+  if (!detectorYinBtn || !detectorClassicBtn) return;
+
+  const applyUi = () => {
+    detectorYinBtn.classList.toggle('active', detectorMode === 'yin');
+    detectorClassicBtn.classList.toggle('active', detectorMode === 'classic');
+    if (detectorLabel) {
+      detectorLabel.textContent = detectorMode === 'yin' ? 'Enhanced (YIN)' : 'Classic (ACF)';
+    }
+  };
+
+  const setMode = (mode) => {
+    if (mode !== 'yin' && mode !== 'classic') return;
+    detectorMode = mode;
+    try {
+      localStorage.setItem(DETECTOR_STORAGE_KEY, mode);
+    } catch (_) { /* ignore */ }
+    pitchStabilizer.reset();
+    applyUi();
+  };
+
+  detectorYinBtn.addEventListener('click', () => setMode('yin'));
+  detectorClassicBtn.addEventListener('click', () => setMode('classic'));
+  applyUi();
+}
+
+/** @returns {number|null} Hz or null if no pitch */
+function detectPitch(timeBuf, sampleRate) {
+  if (detectorMode === 'classic') {
+    const hz = autoCorrelate(timeBuf, sampleRate);
+    return hz === -1 ? null : hz;
+  }
+  return detectPitchYin(timeBuf, sampleRate);
 }
 
 function renderPitch(pitch) {
@@ -199,12 +254,9 @@ function renderPitch(pitch) {
 }
 
 /**
- * Temporal filter between raw detector output and the UI.
- * - Band limit
- * - Octave / harmonic correction (classic ACF often locks onto 2× fundamental)
- * - Median of recent samples (spike kill)
- * - Exponential smooth
- * - Hold last good briefly when detector drops out
+ * Temporal filter between raw detector and UI.
+ * Does NOT hard-fold E3→E2 or reject gradual climbs: while you tighten,
+ * displayed Hz must track the real string (safety). Soft continuity only.
  */
 function createPitchStabilizer(options = {}) {
   const medianWindow = options.medianWindow ?? 7;
@@ -212,8 +264,6 @@ function createPitchStabilizer(options = {}) {
   const holdMs = options.holdMs ?? 250;
   const minHz = options.minHz ?? MIN_FREQ_HZ;
   const maxHz = options.maxHz ?? MAX_FREQ_HZ;
-  // Open low strings — ACF often reports 2× these as E3/A3/D4.
-  const lowOpenFundamentals = options.lowOpenFundamentals ?? [82.40689, 110.0, 146.8324];
 
   let history = [];
   let smoothed = null;
@@ -231,67 +281,24 @@ function createPitchStabilizer(options = {}) {
     return hz >= minHz && hz <= maxHz && Number.isFinite(hz);
   }
 
-  function centsBetween(a, b) {
-    return 1200 * Math.abs(Math.log2(a / b));
-  }
-
-  /**
-   * Classic ACF often returns the first harmonic (2×f0), e.g. E3 (~165) for open low E (~82).
-   * Fold down when the reading looks like 2× a low open string.
-   */
-  function foldLowStringHarmonic(hz) {
-    for (const fund of lowOpenFundamentals) {
-      if (centsBetween(hz, fund * 2) < 50 && inBand(fund)) {
-        // Map onto the measured ratio so flat/sharp is preserved: hz/2 ≈ fund * (hz/(2*fund))
-        return hz / 2;
-      }
-    }
-    // Also fold 4× (rare but noisy ACF)
-    for (const fund of lowOpenFundamentals) {
-      if (centsBetween(hz, fund * 4) < 50 && inBand(hz / 4)) {
-        return hz / 4;
-      }
-    }
-    return hz;
-  }
-
-  /**
-   * Keep continuity with lastGood, but never force a true low reading up an octave.
-   * Prefer dropping to half when the new sample is the fundamental under a stuck harmonic.
-   */
-  function correctOctave(hz) {
-    hz = foldLowStringHarmonic(hz);
-
+  /** Soft continuity only — never clamp a progressive climb to a fixed note. */
+  function softOctaveContinuity(hz) {
     if (lastGood == null) return hz;
 
-    // New sample is ~half of what we were showing → trust the lower fundamental.
-    if (centsBetween(hz, lastGood / 2) < 45 && inBand(hz)) {
-      return hz;
-    }
-
-    // New sample is ~double of last good → reject octave-up spike, keep track.
-    if (centsBetween(hz, lastGood * 2) < 45) {
-      return lastGood;
-    }
-
-    // Same register: pick among f, f/2, 2f the closest to lastGood (with mild lower bias).
-    const candidates = [hz];
-    if (inBand(hz * 0.5)) candidates.push(hz * 0.5);
-    if (inBand(hz * 2)) candidates.push(hz * 2);
-
     let best = hz;
-    let bestScore = Infinity;
-    for (const c of candidates) {
-      const absOct = Math.abs(Math.log2(c / lastGood));
-      if (absOct > 1.05) continue;
-      // Mild penalty for higher candidates so we don't climb to E3 and stick.
-      const score = absOct + (c > lastGood ? 0.05 : 0);
-      if (score < bestScore) {
-        bestScore = score;
-        best = c;
+    let bestRatio = Math.abs(Math.log2(hz / lastGood));
+    for (const factor of [0.5, 2]) {
+      const candidate = hz * factor;
+      if (!inBand(candidate)) continue;
+      const ratio = Math.abs(Math.log2(candidate / lastGood));
+      if (ratio < bestRatio) {
+        bestRatio = ratio;
+        best = candidate;
       }
     }
-    return best;
+    // Only re-map if we land very close to lastGood (~1.5 semitones).
+    if (best !== hz && bestRatio < 0.12) return best;
+    return hz;
   }
 
   function median(values) {
@@ -302,14 +309,9 @@ function createPitchStabilizer(options = {}) {
       : sorted[mid];
   }
 
-  /**
-   * @param {number|null} rawHz detector output, or null if no pitch
-   * @param {number} nowMs performance.now()
-   * @returns {number|null} smoothed Hz to display, or null if nothing to show
-   */
   function update(rawHz, nowMs) {
     if (rawHz != null && inBand(rawHz)) {
-      const accepted = correctOctave(rawHz);
+      const accepted = softOctaveContinuity(rawHz);
       history.push(accepted);
       if (history.length > medianWindow) history.shift();
 
@@ -318,13 +320,7 @@ function createPitchStabilizer(options = {}) {
         smoothed = med;
       } else {
         const centsDelta = 1200 * Math.abs(Math.log2(med / smoothed));
-        // Snap faster when correcting a clear octave fold (e.g. E3 → E2).
-        const octaveJump = centsDelta > 1000;
-        const alpha = octaveJump
-          ? 0.65
-          : centsDelta > 40
-            ? Math.min(0.55, smoothAlpha * 1.8)
-            : smoothAlpha;
+        const alpha = centsDelta > 40 ? Math.min(0.55, smoothAlpha * 1.8) : smoothAlpha;
         smoothed = smoothed + alpha * (med - smoothed);
       }
 
@@ -333,7 +329,6 @@ function createPitchStabilizer(options = {}) {
       return smoothed;
     }
 
-    // No valid sample this frame: hold briefly, then clear
     if (lastGood != null && nowMs - lastGoodAt <= holdMs) {
       return lastGood;
     }
@@ -345,6 +340,86 @@ function createPitchStabilizer(options = {}) {
   }
 
   return { update, reset };
+}
+
+/**
+ * YIN fundamental-frequency estimator (de Cheveigné & Kawahara).
+ * Better at low-E fundamentals than naive ACF peak picking.
+ * @returns {number|null} Hz
+ */
+function detectPitchYin(timeBuf, sampleRate, threshold = 0.13) {
+  const half = Math.floor(timeBuf.length / 2);
+  if (half < 4) return null;
+
+  let rms = 0;
+  for (let i = 0; i < timeBuf.length; i++) {
+    const v = timeBuf[i];
+    rms += v * v;
+  }
+  rms = Math.sqrt(rms / timeBuf.length);
+  if (rms < 0.01) return null;
+
+  const tauMin = Math.max(2, Math.floor(sampleRate / MAX_FREQ_HZ));
+  const tauMax = Math.min(half - 1, Math.ceil(sampleRate / MIN_FREQ_HZ));
+  if (tauMax <= tauMin + 2) return null;
+
+  const yin = new Float32Array(tauMax + 1);
+
+  // Difference function d(τ)
+  for (let tau = 1; tau <= tauMax; tau++) {
+    let sum = 0;
+    for (let i = 0; i < half; i++) {
+      const delta = timeBuf[i] - timeBuf[i + tau];
+      sum += delta * delta;
+    }
+    yin[tau] = sum;
+  }
+
+  // Cumulative mean normalized difference d'(τ)
+  yin[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    runningSum += yin[tau];
+    yin[tau] = runningSum > 0 ? (yin[tau] * tau) / runningSum : 1;
+  }
+
+  // Absolute threshold: first valley below threshold
+  let tauEstimate = -1;
+  for (let tau = tauMin; tau < tauMax; tau++) {
+    if (yin[tau] < threshold) {
+      while (tau + 1 < tauMax && yin[tau + 1] < yin[tau]) tau++;
+      tauEstimate = tau;
+      break;
+    }
+  }
+
+  // Fallback: global minimum if reasonably periodic
+  if (tauEstimate === -1) {
+    let minVal = 1;
+    for (let tau = tauMin; tau < tauMax; tau++) {
+      if (yin[tau] < minVal) {
+        minVal = yin[tau];
+        tauEstimate = tau;
+      }
+    }
+    if (minVal > 0.35 || tauEstimate < 0) return null;
+  }
+
+  // Parabolic interpolation around τ
+  const t = tauEstimate;
+  const x0 = t > 0 ? yin[t - 1] : yin[t];
+  const x1 = yin[t];
+  const x2 = t + 1 <= tauMax ? yin[t + 1] : yin[t];
+  let betterTau = t;
+  const denom = 2 * x1 - x2 - x0;
+  if (Math.abs(denom) > 1e-12) {
+    betterTau = t + (x2 - x0) / (2 * denom);
+  }
+  if (betterTau < 1) return null;
+
+  const freq = sampleRate / betterTau;
+  if (freq < MIN_FREQ_HZ || freq > MAX_FREQ_HZ || !Number.isFinite(freq)) return null;
+  return freq;
 }
 
 function noteFromPitch(frequency) {
@@ -361,47 +436,52 @@ function centsOffFromPitch(frequency, note) {
   return Math.round(1200 * Math.log(frequency / frequencyFromNoteNumber(note)) / Math.log(2));
 }
 
-// Autocorrelation algorithm for pitch detection
+// Classic autocorrelation (kept for A/B). Lag search limited to guitar band for speed.
 function autoCorrelate(buf, sampleRate) {
   let SIZE = buf.length;
   let rms = 0;
 
   for (let i = 0; i < SIZE; i++) {
-    let val = buf[i];
+    const val = buf[i];
     rms += val * val;
   }
   rms = Math.sqrt(rms / SIZE);
-  if (rms < 0.01) return -1; // Not enough signal
+  if (rms < 0.01) return -1;
 
-  let r1 = 0, r2 = SIZE - 1, thres = 0.2;
-  for (let i = 0; i < SIZE / 2; i++)
-    if (Math.abs(buf[i]) < thres) { r1 = i; break; }
-  for (let i = 1; i < SIZE / 2; i++)
-    if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; }
+  const minLag = Math.max(2, Math.floor(sampleRate / MAX_FREQ_HZ));
+  const maxLag = Math.min(Math.floor(SIZE / 2), Math.ceil(sampleRate / MIN_FREQ_HZ));
+  if (maxLag <= minLag + 2) return -1;
 
-  buf = buf.slice(r1, r2);
-  SIZE = buf.length;
+  const c = new Float32Array(maxLag + 1);
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    const n = SIZE - lag;
+    for (let j = 0; j < n; j++) {
+      sum += buf[j] * buf[j + lag];
+    }
+    c[lag] = sum;
+  }
 
-  let c = new Array(SIZE).fill(0);
-  for (let i = 0; i < SIZE; i++)
-    for (let j = 0; j < SIZE - i; j++)
-      c[i] = c[i] + buf[j] * buf[j + i];
-
-  let d = 0; while (c[d] > c[d + 1]) d++;
-  let maxval = -1, maxpos = -1;
-  for (let i = d; i < SIZE; i++) {
-    if (c[i] > maxval) {
-      maxval = c[i];
-      maxpos = i;
+  let maxval = -Infinity;
+  let maxpos = minLag;
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    if (c[lag] > maxval) {
+      maxval = c[lag];
+      maxpos = lag;
     }
   }
-  let T0 = maxpos;
-  
-  // Interpolation
-  let x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
-  let a = (x1 + x3 - 2 * x2) / 2;
-  let b = (x3 - x1) / 2;
-  if (a) T0 = T0 - b / (2 * a);
 
-  return sampleRate / T0;
+  let T0 = maxpos;
+  if (T0 > minLag && T0 < maxLag) {
+    const x1 = c[T0 - 1];
+    const x2 = c[T0];
+    const x3 = c[T0 + 1];
+    const a = (x1 + x3 - 2 * x2) / 2;
+    const b = (x3 - x1) / 2;
+    if (a) T0 = T0 - b / (2 * a);
+  }
+
+  const freq = sampleRate / T0;
+  if (!Number.isFinite(freq) || freq < MIN_FREQ_HZ || freq > MAX_FREQ_HZ) return -1;
+  return freq;
 }
