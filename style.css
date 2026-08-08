@@ -127,7 +127,7 @@ body {
   transform-origin: bottom center;
   transform: translateX(-50%) rotate(0deg);
   border-radius: 4px;
-  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
   z-index: 10;
 }
 

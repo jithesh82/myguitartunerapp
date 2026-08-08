@@ -8,11 +8,13 @@
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Keep screen awake | done (awaiting user test) |
-| 2 | Audio capture hardening | pending |
-| 3 | Shared stability layer | pending |
+| 1 | Keep screen awake | **done** (device-verified) |
+| 2 | Audio capture hardening | **done** (device-verified) |
+| 3 | Shared stability layer | done (code; await device test) |
 | 4 | YIN + Classic toggle | pending |
 | 5 | Polish, build, verify | pending |
+
+Progress tracker: [`docs/WORK_SO_FAR.md`](./WORK_SO_FAR.md)
 
 ## Context
 
