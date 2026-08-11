@@ -13,7 +13,7 @@ Full plan: [`docs/IMPROVEMENT_PLAN.md`](./IMPROVEMENT_PLAN.md)
 | 2 | Audio capture hardening (mic DSP off) | **Done** | Yes — mic works with raw constraints |
 | 3 | Shared pitch stability layer | **Done** | Yes — low E much smoother |
 | 3.1 | Hard E3→E2 octave fold | **Reverted** | Unsafe while tightening (could hide overshoot) |
-| 4 | YIN detector + Classic toggle | **Done** (code) | Awaiting your test |
+| 4 | YIN detector + Classic toggle | **Done** | Yes — works like a charm |
 | 5 | Polish, build, verify, commit | Pending | — |
 
 ---
@@ -171,13 +171,27 @@ Stabilizer is back to **soft continuity only** + median/smooth/hold — progress
 
 ### Device result
 
-- Pending user confirmation.
+- **Pass:** User confirmed — works like a charm (YIN + toggle + safe progressive Hz).
 
 ---
 
-## Phase 5 — Polish & ship (upcoming)
+## Phase 5 — Polish & ship (optional)
 
-Final polish after Phase 4 verification; commit already includes this work — residual polish if needed.
+Core goals met (keep-awake, mic, stabilizer, YIN). Optional later:
+- String-select mode, A4 calibration, confidence meter, MPM alternative
+- Final cleanup commit if anything residual
+
+---
+
+## Summary — goals achieved
+
+| Goal | Status |
+|------|--------|
+| Screen stays awake while tuning | ✅ |
+| Cleaner mic (no AGC/NS warble) | ✅ |
+| Steadier needle (stabilizer) | ✅ |
+| Low-E / fundamental (YIN) without unsafe octave fold | ✅ |
+| Classic vs Enhanced A/B toggle | ✅ |
 
 ---
 
@@ -200,3 +214,4 @@ Final polish after Phase 4 verification; commit already includes this work — r
 | 2026-08-08 | Phase 2 device-verified; Phase 3 implemented; push Phases 2–3 + docs |
 | 2026-08-08 | Phase 3 verified (low E smoother); E2→E3 residual; Phase 3.1 octave fold |
 | 2026-08-08 | Reverted 3.1 (safety); Phase 4 YIN + Classic toggle + buffer 4096 |
+| 2026-08-08 | Phase 4 device-verified — works like a charm |

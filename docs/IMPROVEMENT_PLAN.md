@@ -12,8 +12,8 @@
 | 2 | Audio capture hardening | **done** (device-verified) |
 | 3 | Shared stability layer | **done** (device-verified) |
 | 3.1 | Hard octave fold | **reverted** (unsafe while tightening) |
-| 4 | YIN + Classic toggle | done (code; await device test) |
-| 5 | Polish, build, verify | pending |
+| 4 | YIN + Classic toggle | **done** (device-verified) |
+| 5 | Polish, build, verify | optional / mostly complete |
 
 Progress tracker: [`docs/WORK_SO_FAR.md`](./WORK_SO_FAR.md)
 
